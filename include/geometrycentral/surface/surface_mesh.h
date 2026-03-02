@@ -252,7 +252,9 @@ protected:
   std::vector<size_t> heVertexArr;  // he.vertex()
   std::vector<size_t> heFaceArr;    // he.face()
   std::vector<size_t> vHalfedgeArr; // v.halfedge()
+public:
   std::vector<size_t> fHalfedgeArr; // f.halfedge()
+protected:
   // (note: three more of these below for when not using implicit twin)
 
   // Does this mesh use the implicit-twin convention in its connectivity arrays?

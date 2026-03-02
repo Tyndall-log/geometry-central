@@ -98,8 +98,10 @@ private:
   Halfedge insertVertex_edge(SurfacePoint newPositionOnIntrinsic);
   void resolveNewVertex(Vertex newV, SurfacePoint intrinsicPoint);
 
+public:
   // Update a signpost angle from the (counter-)clockwise neighboring angle
   void updateAngleFromCWNeighor(Halfedge he);
+private:
 
   // Map angle to range [0, angleSum)
   double standardizeAngle(Vertex vert, double angle) const;
