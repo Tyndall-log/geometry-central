@@ -1082,12 +1082,12 @@ void SurfaceMesh::validateConnectivity() {
     throw std::logic_error("face + bl fill > face capacity");
 
   // Check for overflow / other unreasonable values
-  if (nHalfedgesCount > std::numeric_limits<uint64_t>::max() / 2) throw std::logic_error("halfedge count overflow");
-  if (nExteriorHalfedges() > std::numeric_limits<uint64_t>::max() / 2)
+  if (nHalfedgesCount > std::numeric_limits<size_t>::max() / 2) throw std::logic_error("halfedge count overflow");
+  if (nExteriorHalfedges() > std::numeric_limits<size_t>::max() / 2)
     throw std::logic_error("exterior halfedge count overflow");
-  if (nVerticesCount > std::numeric_limits<uint64_t>::max() / 2) throw std::logic_error("vertex count overflow");
-  if (nEdgesCount > std::numeric_limits<uint64_t>::max() / 2) throw std::logic_error("edge count overflow");
-  if (nFacesCount > std::numeric_limits<uint64_t>::max() / 2) throw std::logic_error("face count overflow");
+  if (nVerticesCount > std::numeric_limits<size_t>::max() / 2) throw std::logic_error("vertex count overflow");
+  if (nEdgesCount > std::numeric_limits<size_t>::max() / 2) throw std::logic_error("edge count overflow");
+  if (nFacesCount > std::numeric_limits<size_t>::max() / 2) throw std::logic_error("face count overflow");
 
   // Helpers to check the validity of references
   auto validateVertex = [&](size_t iV, std::string msg) {
