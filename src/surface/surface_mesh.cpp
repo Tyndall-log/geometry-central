@@ -1,4 +1,5 @@
 #include "geometrycentral/surface/surface_mesh.h"
+#include "geometrycentral/surface/snapshot_iterator.h"
 
 #include "geometrycentral/surface/manifold_surface_mesh.h"
 #include "geometrycentral/utilities/combining_hash_functions.h"
@@ -1376,6 +1377,13 @@ Vertex SurfaceMesh::getNewVertex() {
     // Reuse a deleted slot from the free list
     idx = vertexFreeList_.back();
     vertexFreeList_.pop_back();
+
+    // Notify active snapshot iterators
+    for (auto* iter : activeVertexSnapshotIterators_) {
+      if (idx < iter->range()) {
+        iter->markReused(idx);
+      }
+    }
   } else {
     // Append to end — expand capacity if needed
     if (nVerticesFillCount >= nVerticesCapacityCount) {
@@ -1496,6 +1504,13 @@ Halfedge SurfaceMesh::getNewEdgeTriple(bool onBoundary) {
     edgeIdx = edgeFreeList_.back();
     edgeFreeList_.pop_back();
     heIdx = usesImplicitTwin() ? eHalfedgeImplicit(edgeIdx) : edgeIdx * 2; // TODO: non-implicit may differ
+
+    // Notify active snapshot iterators
+    for (auto* iter : activeEdgeSnapshotIterators_) {
+      if (edgeIdx < iter->range()) {
+        iter->markReused(edgeIdx);
+      }
+    }
     // For non-implicit twin, the halfedge slots are not arithmetically tied to edge.
     // In that case, fall through to append path for halfedges.
     if (!usesImplicitTwin()) {
@@ -1583,6 +1598,13 @@ Face SurfaceMesh::getNewFace() {
     // Reuse a deleted slot from the free list
     idx = faceFreeList_.back();
     faceFreeList_.pop_back();
+
+    // Notify active snapshot iterators
+    for (auto* iter : activeFaceSnapshotIterators_) {
+      if (idx < iter->range()) {
+        iter->markReused(idx);
+      }
+    }
   } else {
     // Append to end — expand capacity if needed
     if (nFacesFillCount + nBoundaryLoopsCount >= nFacesCapacityCount) {

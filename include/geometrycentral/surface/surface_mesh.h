@@ -31,6 +31,9 @@ using BoundaryLoopData = MeshData<BoundaryLoop, T>;
 
 class ManifoldSurfaceMesh;
 class RichSurfaceMeshData;
+class SnapshotVertexIterator;
+class SnapshotEdgeIterator;
+class SnapshotFaceIterator;
 
 struct ShrinkOptions {
   float capacityRatio = 1.0f;
@@ -352,6 +355,15 @@ protected:
   std::vector<size_t> vertexFreeList_;
   std::vector<size_t> edgeFreeList_;  // implicit twin: manages edge+halfedge pairs together
   std::vector<size_t> faceFreeList_;  // only for [0, nFacesFillCount) range, not BoundaryLoop region
+
+  // Active snapshot iterators for reuse detection during in-place modification
+  std::vector<SnapshotVertexIterator*> activeVertexSnapshotIterators_;
+  std::vector<SnapshotEdgeIterator*> activeEdgeSnapshotIterators_;
+  std::vector<SnapshotFaceIterator*> activeFaceSnapshotIterators_;
+
+  friend class SnapshotVertexIterator;
+  friend class SnapshotEdgeIterator;
+  friend class SnapshotFaceIterator;
 
   // The mesh is _compressed_ if all of the index spaces are dense. E.g. if thare are |V| vertices, then the vertices
   // are densely indexed from 0 ... |V|-1 (and likewise for the other elements). The mesh can become not-compressed as
