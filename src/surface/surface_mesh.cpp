@@ -2036,5 +2036,95 @@ void SurfaceMesh::shrinkToFit(const ShrinkOptions& options) {
 }
 
 
+// == allocateAt: forced slot allocation for undo/redo ==
+
+Vertex SurfaceMesh::getVertexAt(size_t idx) {
+  GC_SAFETY_ASSERT(idx < nVerticesFillCount, "getVertexAt: slot out of range");
+  GC_SAFETY_ASSERT(vertexIsDead(idx), "getVertexAt: slot is not free");
+
+  // O(1) removal via cross-reference: connectivity array encodes free list index
+  size_t freeIdx = freeListIndexOf(vHalfedgeArr[idx]);
+  GC_SAFETY_ASSERT(freeIdx < vertexFreeList_.size(), "getVertexAt: free list index out of range");
+
+  // Swap with last element in free list
+  size_t lastSlot = vertexFreeList_.back();
+  if (lastSlot != idx) {
+    vertexFreeList_[freeIdx] = lastSlot;
+    vHalfedgeArr[lastSlot] = DEAD_BIT | freeIdx; // update back-reference of swapped element
+  }
+  vertexFreeList_.pop_back();
+
+  nVerticesCount++;
+  modificationTick++;
+  isCompressedFlag = false;
+  return Vertex(this, idx);
+}
+
+Edge SurfaceMesh::getEdgeAt(size_t idx) {
+  GC_SAFETY_ASSERT(edgeIsDead(idx), "getEdgeAt: slot is not free");
+
+  if (usesImplicitTwin()) {
+    // For implicit twin, edge free list stores edge indices.
+    // Canonical halfedge encodes the free list back-reference.
+    size_t heCanonical = eHalfedgeImplicit(idx);
+    size_t freeIdx = freeListIndexOf(heNextArr[heCanonical]);
+    GC_SAFETY_ASSERT(freeIdx < edgeFreeList_.size(), "getEdgeAt: free list index out of range");
+
+    size_t lastEdge = edgeFreeList_.back();
+    if (lastEdge != idx) {
+      edgeFreeList_[freeIdx] = lastEdge;
+      heNextArr[eHalfedgeImplicit(lastEdge)] = DEAD_BIT | freeIdx;
+    }
+    edgeFreeList_.pop_back();
+  } else {
+    size_t freeIdx = freeListIndexOf(eHalfedgeArr[idx]);
+    GC_SAFETY_ASSERT(freeIdx < edgeFreeList_.size(), "getEdgeAt: free list index out of range");
+
+    size_t lastEdge = edgeFreeList_.back();
+    if (lastEdge != idx) {
+      edgeFreeList_[freeIdx] = lastEdge;
+      eHalfedgeArr[lastEdge] = DEAD_BIT | freeIdx;
+    }
+    edgeFreeList_.pop_back();
+  }
+
+  nEdgesCount++;
+  nHalfedgesCount += 2; // edge always has 2 halfedges
+  modificationTick++;
+  isCompressedFlag = false;
+  return Edge(this, idx);
+}
+
+Halfedge SurfaceMesh::getHalfedgeAt(size_t idx) {
+  GC_SAFETY_ASSERT(!usesImplicitTwin(), "getHalfedgeAt: use getEdgeAt for implicit twin mode");
+  GC_SAFETY_ASSERT(halfedgeIsDead(idx), "getHalfedgeAt: slot is not free");
+
+  // Non-implicit twin: individual halfedge allocation (no free list for now, just mark alive)
+  nHalfedgesCount++;
+  modificationTick++;
+  isCompressedFlag = false;
+  return Halfedge(this, idx);
+}
+
+Face SurfaceMesh::getFaceAt(size_t idx) {
+  GC_SAFETY_ASSERT(idx < nFacesFillCount, "getFaceAt: slot out of range");
+  GC_SAFETY_ASSERT(faceIsDead(idx), "getFaceAt: slot is not free");
+
+  size_t freeIdx = freeListIndexOf(fHalfedgeArr[idx]);
+  GC_SAFETY_ASSERT(freeIdx < faceFreeList_.size(), "getFaceAt: free list index out of range");
+
+  size_t lastSlot = faceFreeList_.back();
+  if (lastSlot != idx) {
+    faceFreeList_[freeIdx] = lastSlot;
+    fHalfedgeArr[lastSlot] = DEAD_BIT | freeIdx;
+  }
+  faceFreeList_.pop_back();
+
+  nFacesCount++;
+  modificationTick++;
+  isCompressedFlag = false;
+  return Face(this, idx);
+}
+
 } // namespace surface
 } // namespace geometrycentral

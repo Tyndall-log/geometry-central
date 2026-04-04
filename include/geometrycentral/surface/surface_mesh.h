@@ -386,6 +386,13 @@ protected:
   // Extract free list index from a dead-encoded connectivity value
   static size_t freeListIndexOf(size_t val);
 
+  // Allocate at a specific slot (undo/redo only). Slot must be free (dead).
+  // Caller is responsible for filling connectivity arrays after allocation.
+  Vertex getVertexAt(size_t idx);
+  Halfedge getHalfedgeAt(size_t idx);
+  Edge getEdgeAt(size_t idx);      // implicit twin: also claims halfedge pair
+  Face getFaceAt(size_t idx);
+
   // Deletes leave tombstones, which can be cleaned up with compress().
   // Note that these routines merely mark the element as dead. The caller should hook up connectivity to exclude these
   // elements before invoking.
