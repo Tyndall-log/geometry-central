@@ -1960,15 +1960,75 @@ void SurfaceMesh::compressVertices() {
 
 
 void SurfaceMesh::compress() {
-  if (isCompressed()) {
-    return;
-  }
+  // Deprecated: free list handles memory reuse. Use shrinkToFit() for dense reindexing.
+  // Kept as no-op for API compatibility.
+}
 
+void SurfaceMesh::shrinkToFit(const ShrinkOptions& options) {
+
+  // Perform the actual compaction (same logic as old compress)
   compressHalfedges();
   compressEdges();
   compressFaces();
   compressVertices();
-  isCompressedFlag = true;
+
+  // Clear free lists — no dead elements remain after compaction
+  vertexFreeList_.clear();
+  edgeFreeList_.clear();
+  faceFreeList_.clear();
+
+  // Optionally shrink capacity
+  if (options.capacityRatio >= 1.0f) {
+    size_t newVertCap = static_cast<size_t>(nVerticesCount * options.capacityRatio);
+    size_t newHeCap = static_cast<size_t>(nHalfedgesCount * options.capacityRatio);
+    size_t newEdgeCap = static_cast<size_t>(nEdgesCount * options.capacityRatio);
+    size_t newFaceCap = static_cast<size_t>((nFacesCount + nBoundaryLoopsCount) * options.capacityRatio);
+
+    // Ensure minimums
+    if (newVertCap < nVerticesCount) newVertCap = nVerticesCount;
+    if (newHeCap < nHalfedgesCount) newHeCap = nHalfedgesCount;
+    if (newEdgeCap < nEdgesCount) newEdgeCap = nEdgesCount;
+    if (newFaceCap < nFacesCount + nBoundaryLoopsCount) newFaceCap = nFacesCount + nBoundaryLoopsCount;
+
+    // Implicit twin: enforce even halfedge capacity and sync edge capacity
+    if (usesImplicitTwin()) {
+      if (newHeCap % 2 != 0) newHeCap++;
+      newEdgeCap = newHeCap / 2;
+    }
+
+    vHalfedgeArr.resize(newVertCap);
+    vHalfedgeArr.shrink_to_fit();
+    if (!usesImplicitTwin()) {
+      vHeInStartArr.resize(newVertCap); vHeInStartArr.shrink_to_fit();
+      vHeOutStartArr.resize(newVertCap); vHeOutStartArr.shrink_to_fit();
+    }
+    nVerticesCapacityCount = newVertCap;
+
+    heNextArr.resize(newHeCap); heNextArr.shrink_to_fit();
+    heVertexArr.resize(newHeCap); heVertexArr.shrink_to_fit();
+    heFaceArr.resize(newHeCap); heFaceArr.shrink_to_fit();
+    if (!usesImplicitTwin()) {
+      heSiblingArr.resize(newHeCap); heSiblingArr.shrink_to_fit();
+      heEdgeArr.resize(newHeCap); heEdgeArr.shrink_to_fit();
+      heOrientArr.resize(newHeCap); heOrientArr.shrink_to_fit();
+      heVertInNextArr.resize(newHeCap); heVertInNextArr.shrink_to_fit();
+      heVertInPrevArr.resize(newHeCap); heVertInPrevArr.shrink_to_fit();
+      heVertOutNextArr.resize(newHeCap); heVertOutNextArr.shrink_to_fit();
+      heVertOutPrevArr.resize(newHeCap); heVertOutPrevArr.shrink_to_fit();
+    }
+    nHalfedgesCapacityCount = newHeCap;
+
+    if (!usesImplicitTwin()) {
+      eHalfedgeArr.resize(newEdgeCap); eHalfedgeArr.shrink_to_fit();
+    }
+    nEdgesCapacityCount = newEdgeCap;
+
+    fHalfedgeArr.resize(newFaceCap); fHalfedgeArr.shrink_to_fit();
+    nFacesCapacityCount = newFaceCap;
+  }
+  // else: capacityRatio < 1.0 means don't touch capacity, just remove dead
+
+  isCompressedFlag = true; // dense after shrinkToFit
 
   for (auto& f : compressCallbackList) {
     f();

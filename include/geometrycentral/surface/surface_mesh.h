@@ -32,6 +32,10 @@ using BoundaryLoopData = MeshData<BoundaryLoop, T>;
 class ManifoldSurfaceMesh;
 class RichSurfaceMeshData;
 
+struct ShrinkOptions {
+  float capacityRatio = 1.0f;
+};
+
 
 // ==========================================================
 // ===================    Surface Mesh   ====================
@@ -137,9 +141,15 @@ public:
   virtual std::unique_ptr<SurfaceMesh> copyToSurfaceMesh() const;
   std::unique_ptr<ManifoldSurfaceMesh> toManifoldMesh();
 
-  // Compress the mesh
+  // Compress the mesh (deprecated: free list handles memory reuse)
   bool isCompressed() const;
+  [[deprecated("Free list handles memory reuse. Use shrinkToFit() for dense reindexing.")]]
   void compress();
+
+  // Compact the mesh: remove dead elements and optionally shrink capacity.
+  // capacityRatio >= 1.0: capacity = count * ratio (default 1.0 = exact fit)
+  // capacityRatio <  1.0: remove dead only, keep current capacity
+  void shrinkToFit(const ShrinkOptions& options = {});
 
   // == Mutation routines
 
