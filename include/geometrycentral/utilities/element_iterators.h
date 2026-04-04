@@ -3,10 +3,13 @@
 #include "geometrycentral/utilities/element.h"
 #include "geometrycentral/utilities/utilities.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <iostream>
 #include <list>
+#include <queue>
+#include <vector>
 
 // NOTE: These iterators are not STL compliant (so you can't use them with <algorithm> and friends). This is mainly
 // becuase the STL notion of iterators seems to strongly imply each "container" has exactly one set of data to be
@@ -24,15 +27,31 @@ namespace geometrycentral {
 // =============       Range Iterator       =================
 // ==========================================================
 
+// Min-heap for tracking reused slots during iteration.
+using ReuseHeap = std::priority_queue<size_t, std::vector<size_t>, std::greater<size_t>>;
+
+// Active range info stored in mesh for reuse filtering.
+struct ActiveRange {
+  ReuseHeap* heap;
+  const size_t* iterCurr;  // pointer to iterator's current position
+  size_t rangeEnd;          // end of iteration range
+
+  inline void pushIfNeeded(size_t idx) const {
+    if (idx > *iterCurr && idx < rangeEnd) heap->push(idx);
+  }
+};
+
 // == Base range iterator
 // All range iterators have the form "advance through indices, skipping invalid elements". The two classes below
 // encapsulate that functionality, allowing us to just specify the element type and "valid" function for each.
+// With free list reuse, a ReuseHeap tracks reused slots for snapshot semantics.
 template <typename F>
 class RangeIteratorBase {
 
 public:
   RangeIteratorBase() = default;
-  RangeIteratorBase(typename F::ParentMeshT* mesh_, size_t iStart_, size_t iEnd_);
+  RangeIteratorBase(typename F::ParentMeshT* mesh_, size_t iStart_, size_t iEnd_,
+                    ReuseHeap* reuseHeap_ = nullptr, size_t* iterCurrPtr_ = nullptr);
   const RangeIteratorBase& operator++();
   RangeIteratorBase operator++(int);
 
@@ -44,18 +63,33 @@ private:
   typename F::ParentMeshT* mesh;
   size_t iCurr;
   size_t iEnd;
+  ReuseHeap* reuseHeap = nullptr;
+  size_t* iterCurrPtr = nullptr;
+
+  bool skipIfReused();
 };
 
 template <typename F>
 class RangeSetBase {
 public:
-  RangeSetBase(typename F::ParentMeshT* mesh_, size_t iStart_, size_t iEnd_);
+  RangeSetBase(typename F::ParentMeshT* mesh_, size_t iStart_, size_t iEnd_,
+               std::vector<ActiveRange>* rangeList = nullptr);
+  ~RangeSetBase();
+
+  RangeSetBase(const RangeSetBase&) = delete;
+  RangeSetBase& operator=(const RangeSetBase&) = delete;
+  RangeSetBase(RangeSetBase&&) = delete;
+  RangeSetBase& operator=(RangeSetBase&&) = delete;
+
   RangeIteratorBase<F> begin() const;
   RangeIteratorBase<F> end() const;
 
 private:
   typename F::ParentMeshT* mesh;
   size_t iStart, iEnd;
+  mutable ReuseHeap reuseHeap;
+  mutable size_t iterCurr_ = 0;
+  std::vector<ActiveRange>* rangeList_ = nullptr;
 };
 
 

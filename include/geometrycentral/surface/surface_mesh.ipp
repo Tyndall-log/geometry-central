@@ -76,13 +76,13 @@ inline size_t SurfaceMesh::freeListIndexOf(size_t val) { return val & ~DEAD_BIT;
 
 // Methods for iterating over mesh elements w/ range-based for loops ===========
 
-inline VertexSet SurfaceMesh::vertices()                        { return VertexSet(this, 0, nVerticesFillCount); }
-inline HalfedgeSet SurfaceMesh::halfedges()                     { return HalfedgeSet(this, 0, nHalfedgesFillCount); }
-inline HalfedgeInteriorSet SurfaceMesh::interiorHalfedges()     { return HalfedgeInteriorSet(this, 0, nHalfedgesFillCount); }
-inline HalfedgeExteriorSet SurfaceMesh::exteriorHalfedges()     { return HalfedgeExteriorSet(this, 0, nHalfedgesFillCount); }
-inline CornerSet SurfaceMesh::corners()                         { return CornerSet(this, 0, nHalfedgesFillCount); }
-inline EdgeSet SurfaceMesh::edges()                             { return EdgeSet(this, 0, nEdgesFillCount); }
-inline FaceSet SurfaceMesh::faces()                             { return FaceSet(this, 0, nFacesFillCount); }
+inline VertexSet SurfaceMesh::vertices()                        { return VertexSet(this, 0, nVerticesFillCount, &activeVertexRanges_); }
+inline HalfedgeSet SurfaceMesh::halfedges()                     { return HalfedgeSet(this, 0, nHalfedgesFillCount, &activeHalfedgeRanges_); }
+inline HalfedgeInteriorSet SurfaceMesh::interiorHalfedges()     { return HalfedgeInteriorSet(this, 0, nHalfedgesFillCount, &activeHalfedgeRanges_); }
+inline HalfedgeExteriorSet SurfaceMesh::exteriorHalfedges()     { return HalfedgeExteriorSet(this, 0, nHalfedgesFillCount, &activeHalfedgeRanges_); }
+inline CornerSet SurfaceMesh::corners()                         { return CornerSet(this, 0, nHalfedgesFillCount, &activeHalfedgeRanges_); }
+inline EdgeSet SurfaceMesh::edges()                             { return EdgeSet(this, 0, nEdgesFillCount, &activeEdgeRanges_); }
+inline FaceSet SurfaceMesh::faces()                             { return FaceSet(this, 0, nFacesFillCount, &activeFaceRanges_); }
 inline BoundaryLoopSet SurfaceMesh::boundaryLoops()             { return BoundaryLoopSet(this, 0, nBoundaryLoopsFillCount); }
 
 // Methods for accessing elements by index =====================================

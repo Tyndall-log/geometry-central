@@ -1,5 +1,4 @@
 #include "geometrycentral/surface/surface_mesh.h"
-#include "geometrycentral/surface/snapshot_iterator.h"
 
 #include "geometrycentral/surface/manifold_surface_mesh.h"
 #include "geometrycentral/utilities/combining_hash_functions.h"
@@ -1378,12 +1377,11 @@ Vertex SurfaceMesh::getNewVertex() {
     idx = vertexFreeList_.back();
     vertexFreeList_.pop_back();
 
-    // Notify active snapshot iterators
-    for (auto* iter : activeVertexSnapshotIterators_) {
-      if (idx < iter->range()) {
-        iter->markReused(idx);
-      }
-    }
+    // Clear dead encoding so caller can fill with real connectivity
+    vHalfedgeArr[idx] = 0;
+
+    // Notify active range iterators
+    for (auto& r : activeVertexRanges_) r.pushIfNeeded(idx);
   } else {
     // Append to end — expand capacity if needed
     if (nVerticesFillCount >= nVerticesCapacityCount) {
@@ -1505,12 +1503,13 @@ Halfedge SurfaceMesh::getNewEdgeTriple(bool onBoundary) {
     edgeFreeList_.pop_back();
     heIdx = usesImplicitTwin() ? eHalfedgeImplicit(edgeIdx) : edgeIdx * 2; // TODO: non-implicit may differ
 
-    // Notify active snapshot iterators
-    for (auto* iter : activeEdgeSnapshotIterators_) {
-      if (edgeIdx < iter->range()) {
-        iter->markReused(edgeIdx);
-      }
-    }
+    // Clear dead encoding on halfedge slots
+    heNextArr[heIdx] = 0;
+    heNextArr[heIdx + 1] = 0;
+
+    // Notify active range iterators
+    for (auto& r : activeEdgeRanges_) r.pushIfNeeded(edgeIdx);
+    for (auto& r : activeHalfedgeRanges_) { r.pushIfNeeded(heIdx); r.pushIfNeeded(heIdx + 1); }
     // For non-implicit twin, the halfedge slots are not arithmetically tied to edge.
     // In that case, fall through to append path for halfedges.
     if (!usesImplicitTwin()) {
@@ -1599,12 +1598,11 @@ Face SurfaceMesh::getNewFace() {
     idx = faceFreeList_.back();
     faceFreeList_.pop_back();
 
-    // Notify active snapshot iterators
-    for (auto* iter : activeFaceSnapshotIterators_) {
-      if (idx < iter->range()) {
-        iter->markReused(idx);
-      }
-    }
+    // Clear dead encoding
+    fHalfedgeArr[idx] = 0;
+
+    // Notify active range iterators
+    for (auto& r : activeFaceRanges_) r.pushIfNeeded(idx);
   } else {
     // Append to end — expand capacity if needed
     if (nFacesFillCount + nBoundaryLoopsCount >= nFacesCapacityCount) {

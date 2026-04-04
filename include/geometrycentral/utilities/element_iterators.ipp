@@ -5,19 +5,24 @@ namespace geometrycentral {
 // ==========================================================
 
 template <typename F>
-inline RangeIteratorBase<F>::RangeIteratorBase(typename F::ParentMeshT* mesh_, size_t iStart_, size_t iEnd_)
-    : mesh(mesh_), iCurr(iStart_), iEnd(iEnd_) {
-  if (iCurr != iEnd && !F::elementOkay(*mesh, iCurr)) {
+inline RangeIteratorBase<F>::RangeIteratorBase(typename F::ParentMeshT* mesh_, size_t iStart_, size_t iEnd_,
+                                               ReuseHeap* reuseHeap_, size_t* iterCurrPtr_)
+    : mesh(mesh_), iCurr(iStart_), iEnd(iEnd_), reuseHeap(reuseHeap_), iterCurrPtr(iterCurrPtr_) {
+  if (iCurr != iEnd && (!F::elementOkay(*mesh, iCurr) || skipIfReused())) {
     this->operator++();
   }
+  if (iterCurrPtr) *iterCurrPtr = iCurr;
 }
 
 template <typename F>
 inline const RangeIteratorBase<F>& RangeIteratorBase<F>::operator++() {
   iCurr++;
-  while (iCurr != iEnd && !F::elementOkay(*mesh, iCurr)) {
-    iCurr++;
+  while (iCurr != iEnd) {
+    if (!F::elementOkay(*mesh, iCurr)) { iCurr++; continue; }
+    if (skipIfReused()) { iCurr++; continue; }
+    break;
   }
+  if (iterCurrPtr) *iterCurrPtr = iCurr;
   return *this;
 }
 
@@ -44,12 +49,35 @@ inline typename F::Etype RangeIteratorBase<F>::operator*() const {
 }
 
 template <typename F>
-RangeSetBase<F>::RangeSetBase(typename F::ParentMeshT* mesh_, size_t iStart_, size_t iEnd_)
-    : mesh(mesh_), iStart(iStart_), iEnd(iEnd_) {}
+inline bool RangeIteratorBase<F>::skipIfReused() {
+  if (!reuseHeap || reuseHeap->empty()) return false;
+  GC_SAFETY_ASSERT(reuseHeap->top() >= iCurr, "reuseHeap contains slot behind iterator position — logic error");
+  if (reuseHeap->top() == iCurr) {
+    reuseHeap->pop();
+    return true;
+  }
+  return false;
+}
+
+template <typename F>
+RangeSetBase<F>::RangeSetBase(typename F::ParentMeshT* mesh_, size_t iStart_, size_t iEnd_,
+                               std::vector<ActiveRange>* rangeList)
+    : mesh(mesh_), iStart(iStart_), iEnd(iEnd_), rangeList_(rangeList) {
+  if (rangeList_) rangeList_->push_back({&reuseHeap, &iterCurr_, iEnd_});
+}
+
+template <typename F>
+RangeSetBase<F>::~RangeSetBase() {
+  if (rangeList_) {
+    auto& v = *rangeList_;
+    v.erase(std::remove_if(v.begin(), v.end(),
+      [this](const ActiveRange& r) { return r.heap == &reuseHeap; }), v.end());
+  }
+}
 
 template <typename F>
 inline RangeIteratorBase<F> RangeSetBase<F>::begin() const {
-  return RangeIteratorBase<F>(mesh, iStart, iEnd);
+  return RangeIteratorBase<F>(mesh, iStart, iEnd, &reuseHeap, &iterCurr_);
 }
 
 template <typename F>
