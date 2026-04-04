@@ -337,6 +337,12 @@ protected:
   size_t nFacesFillCount = 0;         // where the real faces stop, and empty/boundary loops begin
   size_t nBoundaryLoopsFillCount = 0; // remember, these fill from the back of the face buffer
 
+  // Free lists for slot reuse. Each stores slot indices of deleted elements.
+  // Dead slots encode their free list index in the connectivity array via DEAD_BIT | freeListIndex.
+  std::vector<size_t> vertexFreeList_;
+  std::vector<size_t> edgeFreeList_;  // implicit twin: manages edge+halfedge pairs together
+  std::vector<size_t> faceFreeList_;  // only for [0, nFacesFillCount) range, not BoundaryLoop region
+
   // The mesh is _compressed_ if all of the index spaces are dense. E.g. if thare are |V| vertices, then the vertices
   // are densely indexed from 0 ... |V|-1 (and likewise for the other elements). The mesh can become not-compressed as
   // deletions mark elements with tombstones--this is how we support constant time deletion.
@@ -366,6 +372,9 @@ protected:
   bool halfedgeIsDead(size_t iHe) const;
   bool edgeIsDead(size_t iE) const;
   bool faceIsDead(size_t iF) const;
+
+  // Extract free list index from a dead-encoded connectivity value
+  static size_t freeListIndexOf(size_t val);
 
   // Deletes leave tombstones, which can be cleaned up with compress().
   // Note that these routines merely mark the element as dead. The caller should hook up connectivity to exclude these

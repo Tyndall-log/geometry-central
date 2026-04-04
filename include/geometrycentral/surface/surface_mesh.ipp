@@ -66,10 +66,13 @@ inline size_t SurfaceMesh::faceIndToBoundaryLoopInd(size_t iF) const { return nF
 inline size_t SurfaceMesh::boundaryLoopIndToFaceInd(size_t iB) const { return nFacesCapacityCount - 1 - iB;}
 
 // Detect dead elements
-inline bool SurfaceMesh::vertexIsDead(size_t iV)      const { return vHalfedgeArr[iV] == INVALID_IND; }
-inline bool SurfaceMesh::halfedgeIsDead(size_t iHe)   const { return heNextArr[iHe] == INVALID_IND; }
-inline bool SurfaceMesh::edgeIsDead(size_t iE)        const { return usesImplicitTwin() ? heNextArr[eHalfedgeImplicit(iE)] == INVALID_IND : eHalfedgeArr[iE] == INVALID_IND; }
-inline bool SurfaceMesh::faceIsDead(size_t iF)        const { return fHalfedgeArr[iF] == INVALID_IND;}
+inline bool SurfaceMesh::vertexIsDead(size_t iV)      const { return vHalfedgeArr[iV] & DEAD_BIT; }
+inline bool SurfaceMesh::halfedgeIsDead(size_t iHe)   const { return heNextArr[iHe] & DEAD_BIT; }
+inline bool SurfaceMesh::edgeIsDead(size_t iE)        const { return usesImplicitTwin() ? (heNextArr[eHalfedgeImplicit(iE)] & DEAD_BIT) : (eHalfedgeArr[iE] & DEAD_BIT); }
+inline bool SurfaceMesh::faceIsDead(size_t iF)        const { return fHalfedgeArr[iF] & DEAD_BIT; }
+
+// Extract free list index from a dead-encoded connectivity value
+inline size_t SurfaceMesh::freeListIndexOf(size_t val) { return val & ~DEAD_BIT; }
 
 // Methods for iterating over mesh elements w/ range-based for loops ===========
 

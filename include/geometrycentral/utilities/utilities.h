@@ -26,6 +26,11 @@ namespace geometrycentral {
 // === Constants
 
 const size_t INVALID_IND = std::numeric_limits<size_t>::max();
+
+// MSB used as dead flag for free list cross-referencing.
+// Lower bits encode the index into the corresponding free list.
+constexpr size_t DEAD_BIT = size_t(1) << (sizeof(size_t) * 8 - 1);
+
 const double PI = 3.1415926535897932384;
 
 // === Memory management

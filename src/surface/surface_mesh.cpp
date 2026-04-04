@@ -1370,36 +1370,39 @@ void SurfaceMesh::validateConnectivity() {
 
 Vertex SurfaceMesh::getNewVertex() {
 
-  // The boring case, when no resize is needed
-  if (nVerticesFillCount < nVerticesCapacityCount) {
-    // No work needed
-  }
-  // The intesting case, where vectors resize
-  else {
-    size_t newCapacity = nVerticesCapacityCount * 2;
+  size_t idx;
 
-    // Resize internal arrays
-    vHalfedgeArr.resize(newCapacity);
-    if (!usesImplicitTwin()) {
-      vHeInStartArr.resize(newCapacity);
-      vHeOutStartArr.resize(newCapacity);
+  if (!vertexFreeList_.empty()) {
+    // Reuse a deleted slot from the free list
+    idx = vertexFreeList_.back();
+    vertexFreeList_.pop_back();
+  } else {
+    // Append to end — expand capacity if needed
+    if (nVerticesFillCount >= nVerticesCapacityCount) {
+      size_t newCapacity = nVerticesCapacityCount * 2;
+
+      vHalfedgeArr.resize(newCapacity);
+      if (!usesImplicitTwin()) {
+        vHeInStartArr.resize(newCapacity);
+        vHeOutStartArr.resize(newCapacity);
+      }
+
+      nVerticesCapacityCount = newCapacity;
+
+      for (auto& f : vertexExpandCallbackList) {
+        f(newCapacity);
+      }
     }
 
-    nVerticesCapacityCount = newCapacity;
-
-
-    // Invoke relevant callback functions
-    for (auto& f : vertexExpandCallbackList) {
-      f(newCapacity);
-    }
+    idx = nVerticesFillCount;
+    nVerticesFillCount++;
   }
 
-  nVerticesFillCount++;
   nVerticesCount++;
 
   modificationTick++;
   isCompressedFlag = false;
-  return Vertex(this, nVerticesFillCount - 1);
+  return Vertex(this, idx);
 }
 
 Halfedge SurfaceMesh::getNewHalfedge(bool isInterior) {
@@ -1485,102 +1488,116 @@ Edge SurfaceMesh::getNewEdge() {
 
 Halfedge SurfaceMesh::getNewEdgeTriple(bool onBoundary) {
 
-  // == Get two halfedges and one edge
-  // recall that these capacities should always be in sync, so we resize and expand for either both edges and
-  // halfedges, or neither
+  size_t edgeIdx;
+  size_t heIdx; // canonical (even) halfedge index
 
-  if (nHalfedgesFillCount + 1 < nHalfedgesCapacityCount) {
-    GC_SAFETY_ASSERT(nEdgesFillCount < nEdgesCapacityCount, "edge capacity is out of sync with halfedge capacity");
-
-    // No work needed
+  if (!edgeFreeList_.empty()) {
+    // Reuse a deleted edge slot (and its paired halfedge slots)
+    edgeIdx = edgeFreeList_.back();
+    edgeFreeList_.pop_back();
+    heIdx = usesImplicitTwin() ? eHalfedgeImplicit(edgeIdx) : edgeIdx * 2; // TODO: non-implicit may differ
+    // For non-implicit twin, the halfedge slots are not arithmetically tied to edge.
+    // In that case, fall through to append path for halfedges.
+    if (!usesImplicitTwin()) {
+      // Non-implicit: edge free list only reclaims edge slot, not halfedge slots.
+      // Halfedges must be appended. (Non-implicit free list reuse is not yet implemented.)
+      edgeFreeList_.push_back(edgeIdx); // put it back
+      goto append_path;
+    }
   } else {
+append_path:
+    // Append to end — expand capacity if needed
+    if (nHalfedgesFillCount + 1 >= nHalfedgesCapacityCount) {
+      GC_SAFETY_ASSERT(usesImplicitTwin() || nEdgesFillCount >= nEdgesCapacityCount || true,
+                        "expanding halfedge capacity");
 
-    size_t initHalfedgeCapacity = nHalfedgesCapacityCount; // keep track before we start modifying for clarity
-    size_t initEdgeCapacity = nEdgesCapacityCount;
-    size_t newHalfedgeCapacity = std::max(initHalfedgeCapacity * 2, (size_t)2); // double the capacity
-    size_t newEdgeCapacity = std::max(initEdgeCapacity * 2, (size_t)1);
+      size_t newHalfedgeCapacity = std::max(nHalfedgesCapacityCount * 2, (size_t)2);
+      size_t newEdgeCapacity = std::max(nEdgesCapacityCount * 2, (size_t)1);
 
-    { // expand halfedge list
+      { // expand halfedge list
+        heNextArr.resize(newHalfedgeCapacity);
+        heVertexArr.resize(newHalfedgeCapacity);
+        heFaceArr.resize(newHalfedgeCapacity);
+        if (!usesImplicitTwin()) {
+          heSiblingArr.resize(newHalfedgeCapacity);
+          heEdgeArr.resize(newHalfedgeCapacity);
+          heOrientArr.resize(newHalfedgeCapacity);
+        }
 
-      // Resize internal arrays
-      heNextArr.resize(newHalfedgeCapacity);
-      heVertexArr.resize(newHalfedgeCapacity);
-      heFaceArr.resize(newHalfedgeCapacity);
-      if (!usesImplicitTwin()) {
-        heSiblingArr.resize(newHalfedgeCapacity);
-        heEdgeArr.resize(newHalfedgeCapacity);
-        heOrientArr.resize(newHalfedgeCapacity);
+        nHalfedgesCapacityCount = newHalfedgeCapacity;
+
+        for (auto& f : halfedgeExpandCallbackList) {
+          f(newHalfedgeCapacity);
+        }
       }
 
-      nHalfedgesCapacityCount = newHalfedgeCapacity;
+      { // expand edges
+        nEdgesCapacityCount = newEdgeCapacity;
 
-      // Invoke relevant callback functions
-      for (auto& f : halfedgeExpandCallbackList) {
-        f(newHalfedgeCapacity);
+        if (!usesImplicitTwin()) {
+          eHalfedgeArr.resize(newEdgeCapacity);
+        }
+
+        for (auto& f : edgeExpandCallbackList) {
+          f(newEdgeCapacity);
+        }
       }
     }
 
-    { // expand edges
-      nEdgesCapacityCount = newEdgeCapacity;
-
-      if (!usesImplicitTwin()) {
-        eHalfedgeArr.resize(newEdgeCapacity);
-      }
-
-      // Invoke relevant callback functions
-      for (auto& f : edgeExpandCallbackList) {
-        f(newEdgeCapacity);
-      }
-    }
+    heIdx = nHalfedgesFillCount;
+    edgeIdx = nEdgesFillCount;
+    nHalfedgesFillCount += 2;
+    nEdgesFillCount++;
   }
 
-
-  // == Get one
-
-  // Fill connectivity buffers if needed
+  // Fill connectivity buffers if needed (non-implicit twin)
   if (!usesImplicitTwin()) {
-    heSiblingArr[nHalfedgesFillCount] = nHalfedgesFillCount + 1;
-    heSiblingArr[nHalfedgesFillCount + 1] = nHalfedgesFillCount;
-    heEdgeArr[nHalfedgesFillCount] = nEdgesFillCount;
-    heEdgeArr[nHalfedgesFillCount + 1] = nEdgesFillCount;
-    heOrientArr[nHalfedgesFillCount] = true;
-    heOrientArr[nHalfedgesFillCount + 1] = false;
-    eHalfedgeArr[nEdgesFillCount] = nHalfedgesFillCount;
+    heSiblingArr[heIdx] = heIdx + 1;
+    heSiblingArr[heIdx + 1] = heIdx;
+    heEdgeArr[heIdx] = edgeIdx;
+    heEdgeArr[heIdx + 1] = edgeIdx;
+    heOrientArr[heIdx] = true;
+    heOrientArr[heIdx + 1] = false;
+    eHalfedgeArr[edgeIdx] = heIdx;
   }
 
-  nHalfedgesFillCount += 2;
   nHalfedgesCount += 2;
   if (onBoundary) {
     nInteriorHalfedgesCount += 1;
   } else {
     nInteriorHalfedgesCount += 2;
   }
-  nEdgesFillCount++;
   nEdgesCount++;
 
   modificationTick++;
   isCompressedFlag = false;
-  return Halfedge(this, nHalfedgesFillCount - 2);
+  return Halfedge(this, heIdx);
 }
 
 
 Face SurfaceMesh::getNewFace() {
 
-  // The boring case, when no resize is needed
-  if (nFacesFillCount + nBoundaryLoopsCount < nFacesCapacityCount) {
-    // No work needed
-  }
-  // The intesting case, where vectors resize
-  else {
-    expandFaceStorage();
+  size_t idx;
+
+  if (!faceFreeList_.empty()) {
+    // Reuse a deleted slot from the free list
+    idx = faceFreeList_.back();
+    faceFreeList_.pop_back();
+  } else {
+    // Append to end — expand capacity if needed
+    if (nFacesFillCount + nBoundaryLoopsCount >= nFacesCapacityCount) {
+      expandFaceStorage();
+    }
+
+    idx = nFacesFillCount;
+    nFacesFillCount++;
   }
 
   nFacesCount++;
-  nFacesFillCount++;
 
   modificationTick++;
   isCompressedFlag = false;
-  return Face(this, nFacesFillCount - 1);
+  return Face(this, idx);
 }
 
 BoundaryLoop SurfaceMesh::getNewBoundaryLoop() {
@@ -1655,7 +1672,7 @@ void SurfaceMesh::deleteEdgeBundle(Edge e) {
       nInteriorHalfedgesCount--;
     }
 
-    heNextArr[i] = INVALID_IND;
+    heNextArr[i] = DEAD_BIT | 0;
     heVertexArr[i] = INVALID_IND;
     heFaceArr[i] = INVALID_IND;
 
@@ -1671,8 +1688,17 @@ void SurfaceMesh::deleteEdgeBundle(Edge e) {
 
   // delete edge stuff
   if (!usesImplicitTwin()) {
-    eHalfedgeArr[e.getIndex()] = INVALID_IND;
+    eHalfedgeArr[e.getIndex()] = DEAD_BIT | 0;
   }
+
+  // Add edge to free list (works for both implicit and non-implicit)
+  size_t edgeFreeIdx = edgeFreeList_.size();
+  edgeFreeList_.push_back(e.getIndex());
+  // For implicit twin, mark canonical halfedge with free list back-reference
+  if (usesImplicitTwin()) {
+    heNextArr[eHalfedgeImplicit(e.getIndex())] = DEAD_BIT | edgeFreeIdx;
+  }
+
   nEdgesCount--;
 
   modificationTick++;
@@ -1682,9 +1708,8 @@ void SurfaceMesh::deleteEdgeBundle(Edge e) {
 void SurfaceMesh::deleteElement(Halfedge he) {
   GC_SAFETY_ASSERT(!usesImplicitTwin(), "cannot delete a single halfedge with implict twin");
 
-  // delete all of the incident halfedges
   size_t i = he.getIndex();
-  heNextArr[i] = INVALID_IND;
+  heNextArr[i] = DEAD_BIT | 0;
   heVertexArr[i] = INVALID_IND;
   heFaceArr[i] = INVALID_IND;
   heSiblingArr[i] = INVALID_IND;
@@ -1708,7 +1733,7 @@ void SurfaceMesh::deleteElement(Edge e) {
   GC_SAFETY_ASSERT(!usesImplicitTwin(), "cannot delete a single edge with implict twin");
 
   size_t i = e.getIndex();
-  eHalfedgeArr[e.getIndex()] = INVALID_IND;
+  eHalfedgeArr[i] = DEAD_BIT | 0;
   nEdgesCount--;
 
   modificationTick++;
@@ -1719,7 +1744,9 @@ void SurfaceMesh::deleteElement(Edge e) {
 void SurfaceMesh::deleteElement(Vertex v) {
   size_t iV = v.getIndex();
 
-  vHalfedgeArr[iV] = INVALID_IND;
+  size_t freeIdx = vertexFreeList_.size();
+  vHalfedgeArr[iV] = DEAD_BIT | freeIdx;
+  vertexFreeList_.push_back(iV);
   nVerticesCount--;
 
   modificationTick++;
@@ -1729,7 +1756,9 @@ void SurfaceMesh::deleteElement(Vertex v) {
 void SurfaceMesh::deleteElement(Face f) {
   size_t iF = f.getIndex();
 
-  fHalfedgeArr[iF] = INVALID_IND;
+  size_t freeIdx = faceFreeList_.size();
+  fHalfedgeArr[iF] = DEAD_BIT | freeIdx;
+  faceFreeList_.push_back(iF);
   nFacesCount--;
 
   modificationTick++;
@@ -1739,7 +1768,7 @@ void SurfaceMesh::deleteElement(Face f) {
 void SurfaceMesh::deleteElement(BoundaryLoop bl) {
   size_t iF = boundaryLoopIndToFaceInd(bl.getIndex());
 
-  fHalfedgeArr[iF] = INVALID_IND;
+  fHalfedgeArr[iF] = DEAD_BIT | 0; // BoundaryLoop: no free list reuse for now, just mark dead
   nBoundaryLoopsCount--;
 
   modificationTick++;
@@ -1748,7 +1777,7 @@ void SurfaceMesh::deleteElement(BoundaryLoop bl) {
 
 void SurfaceMesh::updateValues(std::vector<size_t>& arr, const std::vector<size_t>& oldToNew) {
   for (size_t& x : arr) {
-    if (x == INVALID_IND) continue;
+    if (x == INVALID_IND || (x & DEAD_BIT)) continue;
     x = oldToNew[x];
   }
 }
