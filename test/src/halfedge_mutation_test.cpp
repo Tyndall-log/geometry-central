@@ -575,8 +575,8 @@ TEST_F(HalfedgeMutationSuite, ContainerCompress) {
       EXPECT_EQ(values[v], 7);
     }
 
-    // Compress
-    a.manifoldMesh->compress();
+    // ShrinkToFit (replaces deprecated compress)
+    a.manifoldMesh->shrinkToFit();
 
     // Iterate through and check values
     EXPECT_EQ(values.size(), a.manifoldMesh->nVertices());
@@ -604,8 +604,8 @@ TEST_F(HalfedgeMutationSuite, ContainerCompressEdge) {
       EXPECT_EQ(values[e], 7);
     }
 
-    // Compress
-    a.manifoldMesh->compress();
+    // ShrinkToFit (replaces deprecated compress)
+    a.manifoldMesh->shrinkToFit();
 
     // Iterate through and check values
     EXPECT_EQ(values.size(), a.manifoldMesh->nEdges());
