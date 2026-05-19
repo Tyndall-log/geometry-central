@@ -1117,7 +1117,8 @@ void SurfaceMesh::validateConnectivity() {
     validateHalfedge(heNextArr[iHe], "he.next()");
     validateVertex(heVertexArr[iHe], "he.vertex()");
     validateEdge(heEdge(iHe), "he.edge()");
-    validateFace(heFaceArr[iHe], "he.face()");
+    validateFace(heFaceArr[iHe],
+                 "he.face() [he=" + std::to_string(iHe) + ", face=" + std::to_string(heFaceArr[iHe]) + "]");
     if (!usesImplicitTwin()) {
       validateHalfedge(heVertInNextArr[iHe], "heVertInNextArr");
       validateHalfedge(heVertInPrevArr[iHe], "heVertInPrevArr");
@@ -1299,10 +1300,11 @@ void SurfaceMesh::validateConnectivity() {
       if (hasBoundaryHe) {
         if (useImplicitTwinFlag) {
           if (!v.halfedge().isInterior()) {
-            throw std::logic_error("v.halfedge() is exterior");
+            throw std::logic_error("v.halfedge() is exterior [v=" + std::to_string(v.getIndex()) + "]");
           }
           if (v.halfedge().twin().isInterior()) {
-            throw std::logic_error("v.halfedge() does not border boundary on a boundary vertex");
+            throw std::logic_error("v.halfedge() does not border boundary on a boundary vertex [v=" +
+                                   std::to_string(v.getIndex()) + "]");
           }
         }
         if (!v.isBoundary()) {

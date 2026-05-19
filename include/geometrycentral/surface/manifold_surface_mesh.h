@@ -83,6 +83,16 @@ public:
   // Remove a face along the boundary. Currently does not know how to remove ears or whole components.
   bool removeFaceAlongBoundary(Face f);
 
+  // Remove a triangular face and leave a hole in its place, preserving all remaining faces.
+  // Boundary faces expand an existing hole; interior faces create a new boundary loop.
+  bool removeFaceMakeHole(Face f);
+
+  // Remove all live faces incident on an edge, leaving a hole in their place.
+  bool eraseEdgeWithIncidentFacesMakeHole(Edge e);
+
+  // Remove all live faces incident on a vertex, leaving a hole in their place.
+  bool eraseVertexWithIncidentFacesMakeHole(Vertex v);
+
   // Triangulate in a face, returns all subfaces
   std::vector<Face> triangulate(Face f);
 

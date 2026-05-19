@@ -1528,6 +1528,389 @@ bool ManifoldSurfaceMesh::removeFaceAlongBoundary(Face f) {
   }
 }
 
+bool ManifoldSurfaceMesh::removeFaceMakeHole(Face f) {
+
+  GC_SAFETY_ASSERT(!f.isBoundaryLoop(), "cannot remove a boundary loop face");
+  GC_SAFETY_ASSERT(f.isTriangle(), "removeFaceMakeHole currently requires triangular faces");
+
+  Halfedge he0 = f.halfedge();
+  Halfedge he1 = he0.next();
+  Halfedge he2 = he1.next();
+
+  Halfedge he0T = he0.twin();
+  Halfedge he1T = he1.twin();
+  Halfedge he2T = he2.twin();
+
+  int bCount = 0;
+  if (!he0T.isInterior()) bCount++;
+  if (!he1T.isInterior()) bCount++;
+  if (!he2T.isInterior()) bCount++;
+
+  if (bCount == 0) {
+    for (int pass = 0; pass < 3; ++pass) {
+      bool changed = false;
+
+      he0 = f.halfedge();
+      he1 = he0.next();
+      he2 = he1.next();
+
+      if (he0 == he0.edge().halfedge()) {
+        switchHalfedgeSides(he0.edge());
+        changed = true;
+      } else if (he1 == he1.edge().halfedge()) {
+        switchHalfedgeSides(he1.edge());
+        changed = true;
+      } else if (he2 == he2.edge().halfedge()) {
+        switchHalfedgeSides(he2.edge());
+        changed = true;
+      }
+
+      if (!changed) break;
+    }
+
+    he0 = f.halfedge();
+    he1 = he0.next();
+    he2 = he1.next();
+    he0T = he0.twin();
+    he1T = he1.twin();
+    he2T = he2.twin();
+
+    BoundaryLoop bl = getNewBoundaryLoop();
+    size_t blFaceInd = bl.getIndex();
+
+    heFaceArr[he0.getIndex()] = blFaceInd;
+    heFaceArr[he1.getIndex()] = blFaceInd;
+    heFaceArr[he2.getIndex()] = blFaceInd;
+    fHalfedgeArr[blFaceInd] = he0.getIndex();
+
+    vHalfedgeArr[he0.vertex().getIndex()] = he2T.getIndex();
+    vHalfedgeArr[he1.vertex().getIndex()] = he0T.getIndex();
+    vHalfedgeArr[he2.vertex().getIndex()] = he1T.getIndex();
+    deleteElement(f);
+    modificationTick++;
+    return true;
+  }
+
+  if (bCount == 1) {
+    return removeFaceAlongBoundary(f);
+  }
+
+  if (bCount == 2) {
+    Halfedge he0 = f.halfedge();
+    while (!he0.twin().isInterior()) {
+      he0 = he0.next();
+    }
+
+    Halfedge he0T = he0.twin();
+    Halfedge he1 = he0.next();
+    Halfedge he1T = he1.twin();
+    Halfedge he2 = he1.next();
+    Halfedge he2T = he2.twin();
+
+    // On a manifold triangle mesh, the two boundary edges of a bCount == 2 face
+    // should belong to the same boundary loop. Keep the check defensive anyway,
+    // because malformed intermediate states or future generalizations could violate
+    // that assumption.
+    Face bLoop = he1T.face();
+    if (he2T.face() != bLoop) {
+      return false;
+    }
+    Halfedge hePrev = he2T.prevOrbitFace();
+    Halfedge heNext = he1T.next();
+
+    Vertex v0 = he0.vertex();
+    Vertex v1 = he1.vertex();
+    Vertex v2 = he2.vertex();
+
+    heNextArr[hePrev.getIndex()] = he0.getIndex();
+    heNextArr[he0.getIndex()] = heNext.getIndex();
+    heFaceArr[he0.getIndex()] = bLoop.getIndex();
+    fHalfedgeArr[bLoop.getIndex()] = he0.getIndex();
+
+    vHalfedgeArr[v0.getIndex()] = hePrev.twin().getIndex();
+    vHalfedgeArr[v1.getIndex()] = he0T.getIndex();
+
+    ensureEdgeHasInteriorHalfedge(he0.edge());
+    deleteEdgeBundle(he1.edge());
+    deleteEdgeBundle(he2.edge());
+    deleteElement(v2);
+    deleteElement(f);
+
+    modificationTick++;
+    return true;
+  }
+
+  BoundaryLoop bl = he0T.face().asBoundaryLoop();
+  deleteElement(f);
+  deleteElement(bl);
+  deleteEdgeBundle(he0.edge());
+  deleteEdgeBundle(he1.edge());
+  deleteEdgeBundle(he2.edge());
+  deleteElement(he0.vertex());
+  deleteElement(he1.vertex());
+  deleteElement(he2.vertex());
+  modificationTick++;
+  return true;
+}
+
+bool ManifoldSurfaceMesh::eraseEdgeWithIncidentFacesMakeHole(Edge e) {
+  GC_SAFETY_ASSERT(!e.isDead(), "cannot erase dead edge");
+
+  if (e.isBoundary()) {
+    Face incidentFace;
+    for (Face f : e.adjacentFaces()) {
+      if (!f.isBoundaryLoop()) {
+        incidentFace = f;
+        break;
+      }
+    }
+    if (incidentFace == Face()) {
+      return false;
+    }
+    return removeFaceMakeHole(incidentFace);
+  }
+
+  std::array<Halfedge, 4> ring;
+  try {
+    ring = e.diamondBoundary();
+  } catch (const std::exception&) {
+    return false;
+  }
+
+  Halfedge hBC = ring[0];
+  Halfedge hCA = ring[1];
+  Halfedge hAD = ring[2];
+  Halfedge hDB = ring[3];
+
+  if (!hBC.twin().isInterior() || !hCA.twin().isInterior() || !hAD.twin().isInterior() ||
+      !hDB.twin().isInterior()) {
+    return false;
+  }
+
+  Face fA = e.halfedge().face();
+  Face fB = e.halfedge().twin().face();
+  Vertex vA = e.halfedge().vertex();
+  Vertex vB = e.halfedge().twin().vertex();
+  Vertex vC = hCA.vertex();
+  Vertex vD = hDB.vertex();
+
+  BoundaryLoop bl = getNewBoundaryLoop();
+  size_t blFaceInd = bl.getIndex();
+
+  heFaceArr[hBC.getIndex()] = blFaceInd;
+  heFaceArr[hCA.getIndex()] = blFaceInd;
+  heFaceArr[hAD.getIndex()] = blFaceInd;
+  heFaceArr[hDB.getIndex()] = blFaceInd;
+
+  heNextArr[hBC.getIndex()] = hCA.getIndex();
+  heNextArr[hCA.getIndex()] = hAD.getIndex();
+  heNextArr[hAD.getIndex()] = hDB.getIndex();
+  heNextArr[hDB.getIndex()] = hBC.getIndex();
+  fHalfedgeArr[blFaceInd] = hBC.getIndex();
+
+  vHalfedgeArr[vA.getIndex()] = hCA.twin().getIndex();
+  vHalfedgeArr[vB.getIndex()] = hDB.twin().getIndex();
+  vHalfedgeArr[vC.getIndex()] = hBC.twin().getIndex();
+  vHalfedgeArr[vD.getIndex()] = hAD.twin().getIndex();
+
+  ensureEdgeHasInteriorHalfedge(hBC.edge());
+  ensureEdgeHasInteriorHalfedge(hCA.edge());
+  ensureEdgeHasInteriorHalfedge(hAD.edge());
+  ensureEdgeHasInteriorHalfedge(hDB.edge());
+
+  deleteEdgeBundle(e);
+  deleteElement(fA);
+  deleteElement(fB);
+
+  modificationTick++;
+  return true;
+}
+
+bool ManifoldSurfaceMesh::eraseVertexWithIncidentFacesMakeHole(Vertex v) {
+  GC_SAFETY_ASSERT(!v.isDead(), "cannot erase dead vertex");
+
+  if (v.isBoundary()) {
+    Halfedge start = v.halfedge();
+    if (!start.isInterior() || start.vertex() != v) {
+      return false;
+    }
+
+    Halfedge startExterior = start.twin();
+    if (startExterior.isInterior()) {
+      return false;
+    }
+
+    Face bLoop = startExterior.face();
+
+    std::vector<Halfedge> boundaryHalfedges;
+    std::vector<Face> deadFaces;
+    std::vector<Edge> deadEdges;
+    std::vector<Vertex> boundaryVertices;
+
+    Halfedge curr = start;
+    Halfedge endExterior;
+    while (true) {
+      if (!curr.isInterior() || curr.vertex() != v || !curr.face().isTriangle()) {
+        return false;
+      }
+
+      Halfedge outer = curr.next();
+      Halfedge back = outer.next();
+      if (back.next() != curr) {
+        return false;
+      }
+      if (!outer.twin().isInterior()) {
+        return false;
+      }
+
+      boundaryHalfedges.push_back(outer);
+      deadFaces.push_back(curr.face());
+      deadEdges.push_back(curr.edge());
+
+      if (boundaryVertices.empty()) {
+        boundaryVertices.push_back(outer.vertex());
+      }
+      boundaryVertices.push_back(back.vertex());
+
+      Halfedge nextOutgoing = back.twin();
+      if (!nextOutgoing.isInterior()) {
+        endExterior = nextOutgoing;
+        deadEdges.push_back(back.edge());
+        break;
+      }
+
+      curr = nextOutgoing;
+      if (curr == start) {
+        return false;
+      }
+    }
+
+    if (endExterior == Halfedge() || endExterior.face() != bLoop) {
+      return false;
+    }
+
+    Halfedge prevBoundary = startExterior.prevOrbitFace();
+    Halfedge nextBoundary = endExterior.next();
+
+    heNextArr[prevBoundary.getIndex()] = boundaryHalfedges.front().getIndex();
+    for (std::size_t i = 0; i + 1 < boundaryHalfedges.size(); ++i) {
+      heFaceArr[boundaryHalfedges[i].getIndex()] = bLoop.getIndex();
+      heNextArr[boundaryHalfedges[i].getIndex()] = boundaryHalfedges[i + 1].getIndex();
+    }
+    heFaceArr[boundaryHalfedges.back().getIndex()] = bLoop.getIndex();
+    heNextArr[boundaryHalfedges.back().getIndex()] = nextBoundary.getIndex();
+    fHalfedgeArr[bLoop.getIndex()] = prevBoundary.getIndex();
+
+    for (std::size_t i = 0; i < boundaryVertices.size(); ++i) {
+      Halfedge representative =
+          (i == 0) ? prevBoundary.twin() : boundaryHalfedges[i - 1].twin();
+      vHalfedgeArr[boundaryVertices[i].getIndex()] = representative.getIndex();
+    }
+    for (Halfedge he : boundaryHalfedges) {
+      ensureEdgeHasInteriorHalfedge(he.edge());
+    }
+
+    std::unordered_set<size_t> seenDeadEdges;
+    for (Edge edge : deadEdges) {
+      if (seenDeadEdges.insert(edge.getIndex()).second) {
+        deleteEdgeBundle(edge);
+      }
+    }
+
+    for (Face f : deadFaces) {
+      deleteElement(f);
+    }
+
+    deleteElement(v);
+
+    modificationTick++;
+    return true;
+  }
+
+  std::vector<Halfedge> outgoing;
+  for (Halfedge he : v.outgoingHalfedges()) {
+    outgoing.push_back(he);
+  }
+  if (outgoing.empty()) {
+    deleteElement(v);
+    modificationTick++;
+    return true;
+  }
+
+  std::vector<Halfedge> boundaryHalfedges;
+  boundaryHalfedges.reserve(outgoing.size());
+  std::vector<Face> deadFaces;
+  deadFaces.reserve(outgoing.size());
+  std::vector<Edge> deadEdges;
+  deadEdges.reserve(outgoing.size());
+  std::vector<Vertex> ringVertices;
+  ringVertices.reserve(outgoing.size());
+
+  for (Halfedge he : outgoing) {
+    if (!he.isInterior() || !he.face().isTriangle()) {
+      return false;
+    }
+
+    Halfedge outer = he.next();
+    Halfedge back = outer.next();
+    if (back.next() != he) {
+      return false;
+    }
+
+    boundaryHalfedges.push_back(outer);
+    deadFaces.push_back(he.face());
+    deadEdges.push_back(he.edge());
+    ringVertices.push_back(outer.vertex());
+  }
+
+  BoundaryLoop bl = getNewBoundaryLoop();
+  size_t blFaceInd = bl.getIndex();
+
+  for (std::size_t i = 0; i < boundaryHalfedges.size(); ++i) {
+    Halfedge curr = boundaryHalfedges[i];
+    Halfedge next = boundaryHalfedges[(i + boundaryHalfedges.size() - 1) % boundaryHalfedges.size()];
+    heFaceArr[curr.getIndex()] = blFaceInd;
+    heNextArr[curr.getIndex()] = next.getIndex();
+  }
+  fHalfedgeArr[blFaceInd] = boundaryHalfedges.front().getIndex();
+
+  for (std::size_t i = 0; i < boundaryHalfedges.size(); ++i) {
+    Halfedge prevBoundary = boundaryHalfedges[(i + boundaryHalfedges.size() - 1) % boundaryHalfedges.size()];
+    Vertex ringVertex = ringVertices[i];
+    vHalfedgeArr[ringVertex.getIndex()] = prevBoundary.twin().getIndex();
+    ensureEdgeHasInteriorHalfedge(boundaryHalfedges[i].edge());
+  }
+
+  for (Edge edge : deadEdges) {
+    deleteEdgeBundle(edge);
+  }
+  for (Face f : deadFaces) {
+    deleteElement(f);
+  }
+  deleteElement(v);
+
+  for (Vertex ringVertex : ringVertices) {
+    if (ringVertex.isDead()) continue;
+
+    bool foundBoundaryInterior = false;
+    for (Halfedge he : halfedges()) {
+      if (he.vertex() != ringVertex) continue;
+      if (he.isInterior() && !he.twin().isInterior()) {
+        vHalfedgeArr[ringVertex.getIndex()] = he.getIndex();
+        foundBoundaryInterior = true;
+        break;
+      }
+    }
+
+    if (!foundBoundaryInterior) {
+      return false;
+    }
+  }
+
+  modificationTick++;
+  return true;
+}
+
 Face ManifoldSurfaceMesh::removeVertex(Vertex v) {
   if (v.isBoundary()) {
     throw std::runtime_error("not implemented");
